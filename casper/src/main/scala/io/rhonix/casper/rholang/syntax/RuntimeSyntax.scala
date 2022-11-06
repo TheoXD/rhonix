@@ -245,18 +245,24 @@ final class RuntimeOps[F[_]](private val runtime: RhoRuntime[F]) extends AnyVal 
         sponsoredPhlo <- getSponsorPhlo
         _             <- Log[F].info(s"Sponsored phlo (replay): ${sponsoredPhlo}")
         preChargeResult <- playSystemDeployInternal(
-                            new PreChargeDeploy(
-                              if (sponsoredPhlo == 0) deploy.data.totalPhloCharge
-                              else sponsoredPhlo.min(deploy.data.totalPhloCharge),
-                              if (sponsoredPhlo == 0) deploy.pk
-                              else
-                                PublicKey(
-                                  fromHex(
-                                    deploy.data.sponsorPubKey
-                                  ).get.toArray
-                                ),
-                              rand.splitByte(BlockRandomSeed.PreChargeSplitIndex)
-                            )
+                            sponsoredPhlo match {
+                              case 0 =>
+                                new PreChargeDeploy(
+                                  deploy.data.totalPhloCharge,
+                                  deploy.pk,
+                                  rand.splitByte(BlockRandomSeed.PreChargeSplitIndex)
+                                )
+                              case _ =>
+                                new PreChargeDeploy(
+                                  sponsoredPhlo.min(deploy.data.totalPhloCharge),
+                                  PublicKey(
+                                    fromHex(
+                                      deploy.data.sponsorPubKey
+                                    ).get.toArray
+                                  ),
+                                  rand.splitByte(BlockRandomSeed.PreChargeSplitIndex)
+                                )
+                            }
                           )
       } yield preChargeResult
 

@@ -1,4 +1,5 @@
 new
+    self,
     _prepaidStore,
     lookupCh,
     insertCh,
@@ -70,25 +71,32 @@ in {
                                     for (@hash <- hashCh) {
                                         @TreeHashMap!("get", map, hash.slice(0, 24), *dataCh) |
                                         for (@data <- dataCh) {
-                                                //TODOD: add mutex lock 
-                                                match data {
-                                                    {... _} => {
-                                                        new ack in {
+                                            match data {
+                                                {... _} => {
+                                                    new ack in {
+                                                        for (_ <- @(*self, "INSERT_LOCK", hash)) {
                                                             @TreeHashMap!("set", map, hash.slice(0, 24), data.union(revAddresses), *ack) |
                                                             for (_ <- ack) {
-                                                                ret!("successfully updated")
-                                                            }
-                                                        }
-                                                    }
-                                                    Nil => {
-                                                        new ack in {
-                                                            @TreeHashMap!("set", map, hash.slice(0, 24), revAddresses, *ack) |
-                                                            for (_ <- ack) {
-                                                                ret!("successfully inserted")
+                                                                ret!("successfully updated") |
+                                                                @(*self, "INSERT_LOCK", hash)!(Nil)
                                                             }
                                                         }
                                                     }
                                                 }
+                                                Nil => {
+                                                    new ack in {
+                                                        @(*self, "INSERT_LOCK", hash)!(Nil) |
+                                                            for (_ <- @(*self, "INSERT_LOCK", hash)) {
+                                                            @TreeHashMap!("set", map, hash.slice(0, 24), revAddresses, *ack) |
+                                                            for (_ <- ack) {
+                                                                ret!("successfully inserted") |
+                                                                @(*self, "INSERT_LOCK", hash)!(Nil)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            
                                         }
                                     }
                                 }

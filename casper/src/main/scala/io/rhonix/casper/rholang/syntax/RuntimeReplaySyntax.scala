@@ -235,18 +235,24 @@ final class RuntimeReplayOps[F[_]](private val runtime: ReplayRhoRuntime[F]) ext
             .flatMap(
               sponsoredPhlo =>
                 replaySystemDeployInternal(
-                  new PreChargeDeploy(
-                    if (sponsoredPhlo == 0) processedDeploy.deploy.data.totalPhloCharge
-                    else sponsoredPhlo.min(processedDeploy.deploy.data.totalPhloCharge),
-                    if (sponsoredPhlo == 0) processedDeploy.deploy.pk
-                    else
-                      PublicKey(
-                        fromHex(
-                          processedDeploy.deploy.data.sponsorPubKey
-                        ).get.toArray
-                      ),
-                    rand.splitByte(BlockRandomSeed.PreChargeSplitIndex)
-                  ),
+                  sponsoredPhlo match {
+                    case 0 =>
+                      new PreChargeDeploy(
+                        processedDeploy.deploy.data.totalPhloCharge,
+                        processedDeploy.deploy.pk,
+                        rand.splitByte(BlockRandomSeed.PreChargeSplitIndex)
+                      )
+                    case _ =>
+                      new PreChargeDeploy(
+                        sponsoredPhlo.min(processedDeploy.deploy.data.totalPhloCharge),
+                        PublicKey(
+                          fromHex(
+                            processedDeploy.deploy.data.sponsorPubKey
+                          ).get.toArray
+                        ),
+                        rand.splitByte(BlockRandomSeed.PreChargeSplitIndex)
+                      )
+                  },
                   expectedFailure
                 )
             )
