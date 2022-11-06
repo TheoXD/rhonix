@@ -13,9 +13,14 @@ object StandardDeploys {
       compiledSource: CompiledRholangSource[_],
       privateKey: String,
       timestamp: Long,
-      shardId: String
+      shardId: String,
+      sponsorPubKey: Option[String] = Some("")
   ): Signed[DeployData] = {
     val sk = PrivateKey(privateKey.unsafeHexToByteString)
+    def sponsor() = sponsorPubKey match {
+      case Some(i) => i
+      case None    => ""
+    }
     val deployData =
       DeployData(
         timestamp = timestamp,
@@ -23,7 +28,8 @@ object StandardDeploys {
         phloLimit = accounting.MAX_VALUE,
         phloPrice = 0,
         validAfterBlockNumber = 0,
-        shardId = shardId
+        shardId = shardId,
+        sponsorPubKey = sponsor
       )
 
     Signed(deployData, Secp256k1, sk)
@@ -40,6 +46,7 @@ object StandardDeploys {
   val multiSigRevVaultPk  = "2a2eaa76d6fea9f502629e32b0f8eea19b9de8e2188ec0d589fcafa98fb1f031"
   val poSGeneratorPk      = "a9585a0687761139ab3587a4938fb5ab9fcba675c79fefba889859674046d4a5"
   val revGeneratorPk      = "a06959868e39bb3a8502846686a23119716ecd001700baf9e2ecfa0dbf1a3247"
+  val prepaidMapPk        = "534a5b08cb01636010498e7064a6357be79c031bef767fc95c5a5cdaefa21484"
 
   val (registryPubKey, registryTimestamp) = (toPublic(registryPk), 1559156071321L)
   val (listOpsPubKey, listOpsTimestamp)   = (toPublic(listOpsPk), 1559156082324L)
@@ -52,6 +59,7 @@ object StandardDeploys {
   val (multiSigRevVaultPubKey, multiSigRevVaultTimestamp) =
     (toPublic(multiSigRevVaultPk), 1571408470880L)
   val (poSGeneratorPubKey, poSGeneratorTimestamp) = (toPublic(poSGeneratorPk), 1559156420651L)
+  val (prepaidMapPubKey, prepaidMapTimestamp)     = (toPublic(prepaidMapPk), 1559156552968L)
   val revGeneratorPubKey: PublicKey               = toPublic(revGeneratorPk)
 
   // Public keys used to sign blessed (standard) contracts
@@ -120,6 +128,14 @@ object StandardDeploys {
       CompiledRholangSource("RevVault.rho"),
       revVaultPk,
       revVaultTimestamp,
+      shardId
+    )
+
+  def prepaidMap(shardId: String): Signed[DeployData] =
+    toDeploy(
+      CompiledRholangSource("PrepaidMap.rho"),
+      prepaidMapPk,
+      prepaidMapTimestamp,
       shardId
     )
 

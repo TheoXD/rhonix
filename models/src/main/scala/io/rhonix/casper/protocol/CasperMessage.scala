@@ -357,7 +357,8 @@ final case class DeployData(
     phloPrice: Long,
     phloLimit: Long,
     validAfterBlockNumber: Long,
-    shardId: String
+    shardId: String,
+    sponsorPubKey: String = ""
 ) {
   def totalPhloCharge = phloLimit * phloPrice
 }
@@ -378,7 +379,8 @@ object DeployData {
       proto.phloPrice,
       proto.phloLimit,
       proto.validAfterBlockNumber,
-      proto.shardId
+      proto.shardId,
+      proto.sponsorPubKey
     )
 
   def from(dd: DeployDataProto): Either[String, Signed[DeployData]] =
@@ -397,6 +399,7 @@ object DeployData {
       .withPhloLimit(dd.phloLimit)
       .withValidAfterBlockNumber(dd.validAfterBlockNumber)
       .withShardId(dd.shardId)
+      .withSponsorPubKey(dd.sponsorPubKey)
 
   def toProto(dd: Signed[DeployData]): DeployDataProto =
     toProto(dd.data)

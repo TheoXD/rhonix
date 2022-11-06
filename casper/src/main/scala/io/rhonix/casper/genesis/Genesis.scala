@@ -53,6 +53,7 @@ object Genesis {
       StandardDeploys.authKey(shardId) +:
       StandardDeploys.revVault(shardId) +:
       StandardDeploys.multiSigRevVault(shardId) +:
+      StandardDeploys.prepaidMap(shardId) +:
       vaultDeploys :+
       StandardDeploys.poSGenerator(posParams, shardId)
   }

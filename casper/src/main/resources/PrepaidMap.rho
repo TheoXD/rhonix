@@ -1,0 +1,106 @@
+new
+    _prepaidStore,
+    lookupCh,
+    insertCh,
+    bootstrapLookup(`rho:prepaidMap:lookup`),
+    bootstrapInsert(`rho:prepaidMap:insert`),
+    registryLookup(`rho:registry:lookup`),
+    getRevAddress(`rho:rev:address`),
+    computeHash(`rho:crypto:keccak256Hash`),
+    treeHashMapCh,
+    stdout(`rho:io:stdout`)
+in {
+    registryLookup!(`rho:lang:treeHashMap`, *treeHashMapCh) |
+
+    for (@(_, TreeHashMap) <- treeHashMapCh) {
+        // Use 4 * 8 = 32-bit paths to leaf nodes.
+        @TreeHashMap!("init", 4, *_prepaidStore) |
+        
+        bootstrapLookup!(*lookupCh) | // this will work only once
+        for (lookup <- lookupCh) {
+            contract lookup(@sponsor_pk, @pk, ret) = {
+                for (@map <<- _prepaidStore) {
+                    new deployerId(`rho:rchain:deployerId`), DeployerIdOps(`rho:rhonix:deployerId:ops`), deployerPubKeyBytesCh, dataCh, revAddrCh, hashCh in {
+                        computeHash!(sponsor_pk.hexToBytes(), *hashCh) |
+                        for (@hash <- hashCh) {
+                            for (@data <- dataCh) {
+                                    match data {
+                                        {... _} => {
+                                            DeployerIdOps!("pubKeyBytes", *deployerId, *deployerPubKeyBytesCh) |
+                                            for (@pubKeyBytes <- deployerPubKeyBytesCh) {
+                                                getRevAddress!(
+                                                    "fromPublicKey",
+                                                    pk.hexToBytes(),
+                                                    *revAddrCh
+                                                )
+                                            } |
+                                            for (@addr <- revAddrCh) {
+                                                if (data.contains(addr)) {
+                                                    match data.get(addr) {
+                                                        Int => ret!(data.get(addr))
+                                                        _ => ret!(0)
+                                                    }
+                                                }
+                                                else {
+                                                    ret!(0)
+                                                }
+                                            }
+                                        }
+                                        _ => ret!(0)
+                                    }
+                            } |
+                            @TreeHashMap!("get", map, hash.slice(0, 24), *dataCh)
+                        }
+                    }
+                }
+            }
+        } |
+
+
+        bootstrapInsert!(*insertCh) | // this will work only once
+        for (insert <- insertCh) {
+            contract insert(@revAddresses, deployerId, ret) = {
+                match revAddresses {
+                    {... _} => {
+                        for (@map <<- _prepaidStore) {
+                            new DeployerIdOps(`rho:rhonix:deployerId:ops`), deployerPubKeyBytesCh, hashCh, dataCh in {
+                                DeployerIdOps!("pubKeyBytes", *deployerId, *deployerPubKeyBytesCh) |
+                                for (@pubKeyBytes <- deployerPubKeyBytesCh) {
+                                    computeHash!(pubKeyBytes, *hashCh) |
+                                    for (@hash <- hashCh) {
+                                        @TreeHashMap!("get", map, hash.slice(0, 24), *dataCh) |
+                                        for (@data <- dataCh) {
+                                                //TODOD: add mutex lock 
+                                                match data {
+                                                    {... _} => {
+                                                        new ack in {
+                                                            @TreeHashMap!("set", map, hash.slice(0, 24), data.union(revAddresses), *ack) |
+                                                            for (_ <- ack) {
+                                                                ret!("successfully updated")
+                                                            }
+                                                        }
+                                                    }
+                                                    Nil => {
+                                                        new ack in {
+                                                            @TreeHashMap!("set", map, hash.slice(0, 24), revAddresses, *ack) |
+                                                            for (_ <- ack) {
+                                                                ret!("successfully inserted")
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        ret!("Addresses need to be provided in a Map.")
+                    }
+                }
+            }
+        }
+
+    }
+}
