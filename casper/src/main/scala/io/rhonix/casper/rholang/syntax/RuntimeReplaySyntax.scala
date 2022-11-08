@@ -44,21 +44,9 @@ import io.rhonix.casper.rholang.BlockRandomSeed
 import io.rhonix.casper.syntax._
 import io.rhonix.crypto.hash.Blake2b512Random
 
-import io.rhonix.models.{Expr, GPrivate, GUnforgeable, Send}
-import scala.util.Random
-import scala.collection.immutable.BitSet
-import scodec.bits.ByteVector
 import scodec.bits.ByteVector.fromHex
-import io.rhonix.crypto.{PrivateKey, PublicKey}
-import io.rhonix.rholang.interpreter.SystemProcesses.FixedChannels
-import io.rhonix.models.GUnforgeable.UnfInstance.GPrivateBody
-import io.rhonix.models.Expr.ExprInstance.{GBool, GByteArray, GInt, GString}
-import io.rhonix.models.rholang.RhoType
-import io.rhonix.models.Var.VarInstance.Wildcard
-import io.rhonix.models.Var.WildcardMsg
-import io.rhonix.models.{EVar}
-import com.google.protobuf.ByteString
-import io.rhonix.rholang.interpreter.accounting.Cost
+import io.rhonix.crypto.{PublicKey}
+import io.rhonix.casper.util.SponsorUtil.getSponsorPhlo
 
 trait RuntimeReplaySyntax {
   implicit final def casperSyntaxRholangRuntimeReplay[F[_]](
@@ -174,64 +162,16 @@ final class RuntimeReplayOps[F[_]](private val runtime: ReplayRhoRuntime[F]) ext
       span: Span[F],
       log: Log[F]
   ): EitherT[F, ReplayFailure, NumberChannelsEndVal] = {
-    import io.rhonix.models.rholang.{implicits => toPar}
-
-    val prepaidLookupChannel = FixedChannels.PREPAID_LOOKUP
-    val ackChannel: Par = Par(
-      unforgeables = Seq(
-        GUnforgeable(
-          GPrivateBody(
-            new GPrivate(ByteString.copyFromUtf8(Random.alphanumeric.take(10).foldLeft("")(_ + _)))
-          )
-        )
-      )
-    )
-
-    val data: Seq[Par] = Seq(
-      Par(exprs = Seq(Expr(GString(processedDeploy.deploy.data.sponsorPubKey)))),
-      Par(exprs = Seq(Expr(GString(Base16.encode(processedDeploy.deploy.pk.bytes))))),
-      ackChannel
-    )
-
-    val send = Send(
-      prepaidLookupChannel,
-      data,
-      persistent = false,
-      BitSet()
-    )
-
-    def getSponsorPhlo: F[Long] =
-      for {
-        _    <- Log[F].info(s"Looking up sponsor (replay) ...")
-        cost <- runtime.cost.get
-        _    <- runtime.cost.set(Cost.UNSAFE_MAX)
-
-        checkpoint <- runtime.createSoftCheckpoint
-        _          <- runtime.inj(toPar(send))(rand.splitByte(BlockRandomSeed.PreChargeSplitIndex))
-        chValues   <- runtime.getData(ackChannel) //chValues.isEmpty is true for some reason
-        _          <- runtime.revertToSoftCheckpoint(checkpoint)
-
-        _ <- runtime.cost.set(cost)
-
-        ret = chValues.flatMap(
-          d => d.a.pars
-        )
-
-        result = ret match {
-          case Seq(RhoType.RhoNumber(x)) => x
-          case _                         => 0
-        }
-        _ <- Log[F].info(s"Sponsored phlo: ${result}")
-
-      } yield result
 
     val refT = Ref.of(Set[Par]()).liftEitherT[ReplayFailure]
     refT flatMap { mergeable =>
+      implicit val _d     = processedDeploy.deploy
+      implicit val _r     = rand.splitByte(BlockRandomSeed.PreChargeSplitIndex)
       val expectedFailure = processedDeploy.systemDeployError
       val preChargeF =
         Span[F].mark("precharge-started").liftEitherT[ReplayFailure] *>
           EitherT
-            .liftF(getSponsorPhlo)
+            .liftF(getSponsorPhlo(runtime))
             .flatMap(
               sponsoredPhlo =>
                 replaySystemDeployInternal(

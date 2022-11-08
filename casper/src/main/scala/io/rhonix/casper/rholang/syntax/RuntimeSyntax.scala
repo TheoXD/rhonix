@@ -49,18 +49,9 @@ import io.rhonix.rspace.history.History.emptyRootHash
 import io.rhonix.rspace.merger.EventLogMergingLogic.NumberChannelsEndVal
 import io.rhonix.shared.{Base16, Log}
 
-import scala.util.Random
-import scala.collection.immutable.BitSet
-import scodec.bits.ByteVector
 import scodec.bits.ByteVector.fromHex
-import io.rhonix.crypto.{PrivateKey, PublicKey}
-import io.rhonix.rholang.interpreter.SystemProcesses.FixedChannels
-import io.rhonix.models.GUnforgeable.UnfInstance.GPrivateBody
-import io.rhonix.models.Expr.ExprInstance.{GBool, GByteArray, GInt, GString}
-import io.rhonix.models.rholang.RhoType
-import io.rhonix.models.Var.VarInstance.Wildcard
-import io.rhonix.models.Var.WildcardMsg
-import io.rhonix.models.{EVar}
+import io.rhonix.crypto.{PublicKey}
+import io.rhonix.casper.util.SponsorUtil.getSponsorPhlo
 
 trait RuntimeSyntax {
   implicit final def casperSyntaxRholangRuntime[F[_]](
@@ -190,60 +181,13 @@ final class RuntimeOps[F[_]](private val runtime: RhoRuntime[F]) extends AnyVal 
       deploy: Signed[DeployData],
       rand: Blake2b512Random
   )(implicit s: Sync[F], log: Log[F], span: Span[F]): F[UserDeployRuntimeResult] = {
-    import io.rhonix.models.rholang.{implicits => toPar}
-
-    val prepaidLookupChannel = FixedChannels.PREPAID_LOOKUP
-    val ackChannel: Par = Par(
-      unforgeables = Seq(
-        GUnforgeable(
-          GPrivateBody(
-            new GPrivate(ByteString.copyFromUtf8(Random.alphanumeric.take(10).foldLeft("")(_ + _)))
-          )
-        )
-      )
-    )
-
-    val data: Seq[Par] = Seq(
-      Par(exprs = Seq(Expr(GString(deploy.data.sponsorPubKey)))),
-      Par(exprs = Seq(Expr(GString(Base16.encode(deploy.pk.bytes))))),
-      ackChannel
-    )
-
-    val send = Send(
-      prepaidLookupChannel,
-      data,
-      persistent = false,
-      BitSet()
-    )
-
-    def getSponsorPhlo: F[Long] =
-      for {
-        _    <- Log[F].info(s"Looking up sponsor ...")
-        cost <- runtime.cost.get
-        _    <- runtime.cost.set(Cost.UNSAFE_MAX)
-
-        checkpoint <- runtime.createCheckpoint
-        _          <- runtime.inj(toPar(send))(rand.splitByte(BlockRandomSeed.PreChargeSplitIndex))
-        chValues   <- runtime.getData(ackChannel)
-        _          <- runtime.reset(checkpoint.root)
-
-        _ <- runtime.cost.set(cost)
-
-        ret = chValues.flatMap(
-          d => d.a.pars
-        )
-
-        result = ret match {
-          case Seq(RhoType.RhoNumber(x)) => x
-          case _                         => 0
-        }
-      } yield result
 
     // Pre-charge system deploy evaluator
-    val preChargeF: F[(Vector[Event], Either[SystemDeployUserError, Unit], Set[Par])] =
+    val preChargeF: F[(Vector[Event], Either[SystemDeployUserError, Unit], Set[Par])] = {
+      implicit val _d = deploy
+      implicit val _r = rand.splitByte(BlockRandomSeed.PreChargeSplitIndex)
       for {
-        sponsoredPhlo <- getSponsorPhlo
-        _             <- Log[F].info(s"Sponsored phlo (replay): ${sponsoredPhlo}")
+        sponsoredPhlo <- getSponsorPhlo(runtime)
         preChargeResult <- playSystemDeployInternal(
                             sponsoredPhlo match {
                               case 0 =>
@@ -265,6 +209,7 @@ final class RuntimeOps[F[_]](private val runtime: RhoRuntime[F]) extends AnyVal 
                             }
                           )
       } yield preChargeResult
+    }
 
     // Refund system deploy evaluator
     def refundF(
